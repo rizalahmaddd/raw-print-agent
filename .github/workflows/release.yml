@@ -1,0 +1,117 @@
+name: release
+
+# Two ways to publish a release:
+#  - push a tag:            git tag v1.2.3 && git push origin v1.2.3
+#  - run it from Actions:   Actions > release > Run workflow > version 1.2.3
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without "v", e.g. 1.2.3'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      SIGN_PFX: ${{ secrets.SIGN_PFX_BASE64 }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          VERSION="${VERSION#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::invalid version '$VERSION' (expected 1.2.3 or 1.2.3-rc.1)"; exit 1
+          fi
+          PRERELEASE=false
+          if [[ "$VERSION" == *-* ]]; then PRERELEASE=true; fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          check-latest: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build binaries
+        shell: bash
+        run: |
+          LDFLAGS="-s -w -X main.version=${VERSION}"
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o dist/rawprint-agent-amd64.exe ./cmd/rawprint-agent
+          GOOS=windows GOARCH=386   go build -trimpath -ldflags "$LDFLAGS" -o dist/rawprint-agent-386.exe ./cmd/rawprint-agent
+
+      # Signing steps run only when SIGN_PFX_BASE64 / SIGN_PFX_PASSWORD secrets are set.
+      - name: Sign binaries
+        if: ${{ env.SIGN_PFX != '' }}
+        env:
+          SIGN_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:SIGN_PFX))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1
+          & $signtool.FullName sign /f cert.pfx /p $env:SIGN_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 dist\rawprint-agent-amd64.exe dist\rawprint-agent-386.exe
+          Remove-Item cert.pfx
+
+      - name: Build installer
+        shell: pwsh
+        run: .\scripts\build-installer.ps1 -Version "$env:VERSION"
+
+      - name: Sign installer
+        if: ${{ env.SIGN_PFX != '' }}
+        env:
+          SIGN_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:SIGN_PFX))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1
+          & $signtool.FullName sign /f cert.pfx /p $env:SIGN_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "dist\RawPrintAgent-Setup-$env:VERSION.exe"
+          Remove-Item cert.pfx
+
+      # A fixed file name keeps .../releases/latest/download/RawPrintAgent-Setup.exe stable for IT.
+      - name: Package
+        shell: bash
+        run: |
+          cp "dist/RawPrintAgent-Setup-${VERSION}.exe" dist/RawPrintAgent-Setup.exe
+          cd dist && sha256sum *.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: RawPrint Agent ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ env.PRERELEASE }}
+          make_latest: true
+          generate_release_notes: true
+          body: |
+            **Instalasi:** unduh `RawPrintAgent-Setup.exe`, klik dua kali, setujui prompt Administrator, lalu ikuti wizard-nya.
+
+            Instalasi massal untuk IT:
+            ```bat
+            RawPrintAgent-Setup.exe /VERYSILENT /ORIGINS="https://aplikasi-kamu.example.com" /PRINTERMATCH="LX-310"
+            ```
+            Upgrade: jalankan setup baru di atas versi lama; pengaturan dan pairing tetap tersimpan.
+          files: |
+            dist/RawPrintAgent-Setup.exe
+            dist/RawPrintAgent-Setup-${{ env.VERSION }}.exe
+            dist/rawprint-agent-amd64.exe
+            dist/rawprint-agent-386.exe
+            dist/SHA256SUMS.txt
