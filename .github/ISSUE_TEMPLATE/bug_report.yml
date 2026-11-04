@@ -1,0 +1,49 @@
+name: Laporan bug
+description: Laporkan sesuatu yang tidak berjalan semestinya
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Apa yang terjadi?
+      description: Jelaskan bug-nya dan apa yang seharusnya terjadi.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Langkah reproduksi
+      placeholder: |
+        1. Buka halaman pengaturan ...
+        2. Klik ...
+        3. Muncul ...
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Bagian aplikasi
+      options:
+        - Pencetakan / printer
+        - Halaman pengaturan
+        - Service Windows / jalan otomatis
+        - Installer
+        - HTTP API / rawprint.js
+        - Lainnya
+  - type: input
+    id: version
+    attributes:
+      label: Versi RawPrint Agent
+      placeholder: 0.3.0
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Windows, printer, dan driver
+      placeholder: Windows 11 64-bit, Epson LX-310, driver EPSON LX-310 ESC/P
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshot atau log
+      description: Log ada di %ProgramData%\RawPrintAgent\logs. Hapus data sensitif sebelum menempelkannya.

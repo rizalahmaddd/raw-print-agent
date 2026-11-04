@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RawPrint Agent</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --fg:#1b1f24; --muted:#5b6470; --line:#d9dde3; --bg:#f4f5f7; --card:#fff; --accent:#1f5fd1; --ok:#1a7f37; --warn:#9a6700; --bad:#c62828; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui, "Segoe UI", sans-serif; color:var(--fg); background:var(--bg); }
+  header { background:var(--card); border-bottom:1px solid var(--line); }
+  .bar { max-width:760px; margin:0 auto; padding:12px 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .bar h1 { font-size:17px; margin:0; margin-right:auto; }
+  .bar .ver { color:var(--muted); font-size:13px; font-weight:400; margin-left:6px; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border:0; border-radius:0; padding:6px 12px; background:var(--card); color:var(--muted); }
+  .seg button[aria-pressed="true"] { background:var(--fg); color:#fff; }
+  main { max-width:760px; margin:0 auto; padding:20px; display:grid; gap:14px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; }
+  h2 { font-size:15px; margin:0 0 12px; }
+  p { margin:0 0 10px; }
+  .muted { color:var(--muted); }
+  .small { font-size:13px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+  input, select, textarea { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:7px; font:inherit; background:#fff; color:var(--fg); }
+  textarea { min-height:72px; font:13px/1.4 Consolas, monospace; }
+  button { padding:8px 14px; border-radius:7px; border:1px solid var(--line); background:#fff; color:var(--fg); font:inherit; cursor:pointer; }
+  button:hover { border-color:#b8bec7; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.big { padding:11px 18px; font-size:16px; font-weight:600; }
+  button.link { border:0; background:none; color:var(--accent); padding:4px 0; }
+  button.danger { color:var(--bad); }
+  button:disabled { opacity:.55; cursor:default; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .status { display:flex; gap:14px; align-items:center; }
+  .dot { width:14px; height:14px; border-radius:50%; flex:none; background:var(--muted); }
+  .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); } .dot.bad { background:var(--bad); }
+  .status strong { display:block; font-size:18px; }
+  .pair { border:2px solid #e3b341; background:#fffbea; }
+  .code { font:700 34px/1.1 Consolas, monospace; letter-spacing:6px; margin:6px 0 12px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .presets { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px,1fr)); gap:8px; margin-top:4px; }
+  .presets button { text-align:left; padding:10px 12px; }
+  .presets button[aria-pressed="true"] { border:2px solid var(--accent); padding:9px 11px; }
+  .presets b { display:block; }
+  .nudge { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:12px; margin-top:14px; }
+  .nudge > div { border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .nudge .ctl { display:flex; align-items:center; gap:8px; margin-top:6px; }
+  .nudge .ctl span { min-width:110px; text-align:center; font-weight:600; }
+  ol { margin:0 0 12px; padding-left:20px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px,1fr)); gap:12px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; color:var(--muted); font-weight:600; }
+  .ok-t { color:var(--ok); } .bad-t { color:var(--bad); }
+  .check { display:flex; gap:10px; align-items:center; font-size:15px; color:var(--fg); margin:0 0 8px; cursor:pointer; }
+  .check input { width:18px; height:18px; flex:none; margin:0; accent-color:var(--accent); }
+  [hidden] { display:none !important; }
+  #toast { position:fixed; left:50%; transform:translateX(-50%); bottom:18px; padding:10px 16px; border-radius:8px; background:var(--fg); color:#fff; display:none; max-width:90vw; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>RawPrint Agent<span class="ver" id="ver"></span></h1>
+    <div class="seg" role="group" aria-label="Mode">
+      <button data-mode="simple" data-t="simple"></button><button data-mode="advanced" data-t="advanced"></button>
+    </div>
+    <div class="seg" role="group" aria-label="Language">
+      <button data-lang="id">ID</button><button data-lang="en">EN</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="pairCard" class="pair" hidden>
+    <h2 data-t="pairTitle"></h2>
+    <div id="pairList"></div>
+  </section>
+
+  <section>
+    <div class="status">
+      <div class="dot" id="dot"></div>
+      <div><strong id="statusText"></strong><span class="muted small" id="statusSub"></span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-t="printerPaper"></h2>
+    <label for="printer" data-t="printer"></label>
+    <select id="printer"></select>
+    <p class="muted small" id="noPrinter" hidden data-t="noPrinter"></p>
+    <label style="margin-top:14px" data-t="paper"></label>
+    <div class="presets" id="presets">
+      <button data-preset="279.4"><b data-t="pFull"></b><span class="muted small">9½ × 11 in</span></button>
+      <button data-preset="139.7"><b data-t="pHalf"></b><span class="muted small">9½ × 5½ in</span></button>
+      <button data-preset="custom"><b data-t="pCustom"></b><span class="muted small" id="customLabel"></span></button>
+    </div>
+    <div id="customBox" class="row" style="margin-top:10px" hidden>
+      <div style="flex:1;min-width:160px"><label for="customMM" data-t="heightMM"></label><input id="customMM" type="number" min="50" max="600" step="0.1"></div>
+      <button id="customSave" style="align-self:flex-end" data-t="apply"></button>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-t="calTitle"></h2>
+    <ol class="muted">
+      <li data-t="cal1"></li><li data-t="cal2"></li><li data-t="cal3"></li>
+    </ol>
+    <button class="primary big" id="testPrint" data-t="testPrint"></button>
+    <div class="nudge">
+      <div>
+        <span class="muted small" data-t="vertical"></span>
+        <div class="ctl">
+          <button data-nudge="top:-1" aria-label="up">▲</button><span id="topVal"></span><button data-nudge="top:1" aria-label="down">▼</button>
+        </div>
+      </div>
+      <div>
+        <span class="muted small" data-t="horizontal"></span>
+        <div class="ctl">
+          <button data-nudge="left:-1" aria-label="left">◀</button><span id="leftVal"></span><button data-nudge="left:1" aria-label="right">▶</button>
+        </div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <span class="muted small" id="lastJob"></span>
+      <button class="link" id="resetProfile" style="margin-left:auto" data-t="reset"></button>
+    </div>
+  </section>
+
+  <div id="advanced" hidden style="display:grid;gap:14px">
+    <section>
+      <h2 data-t="advPage"></h2>
+      <div class="grid">
+        <div><label for="height" data-t="heightMM"></label><input id="height" type="number" step="0.1" min="50" max="600"></div>
+        <div><label for="top" data-t="topLines"></label><input id="top" type="number" min="0" max="20"></div>
+        <div><label for="left" data-t="leftCols"></label><input id="left" type="number" min="0" max="40"></div>
+        <div><label for="cpi" data-t="pitch"></label>
+          <select id="cpi"><option value="10">10 cpi · 80</option><option value="12">12 cpi · 96</option><option value="17">17 cpi · 137</option></select></div>
+        <div><label for="quality" data-t="quality"></label>
+          <select id="quality"><option value="draft">Draft</option><option value="nlq">NLQ</option></select></div>
+      </div>
+      <p class="muted small" style="margin-top:10px" data-t="advPageHint"></p>
+      <button class="primary" id="saveProfile" data-t="save"></button>
+    </section>
+
+    <section>
+      <h2 data-t="access"></h2>
+      <label for="origins" data-t="origins"></label>
+      <textarea id="origins" placeholder="https://pos.example.com"></textarea>
+      <div class="grid" style="margin-top:12px">
+        <div><label for="match" data-t="match"></label><input id="match" placeholder="LX-310"></div>
+        <div><label for="autoApprove" data-t="pairing"></label>
+          <select id="autoApprove"><option value="false" data-t="pairAsk"></option><option value="true" data-t="pairAuto"></option></select></div>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="primary" id="saveSettings" data-t="save"></button></div>
+    </section>
+
+    <section id="startupCard" hidden>
+      <h2 data-t="startup"></h2>
+      <label class="check"><input type="checkbox" id="autoStart"><span data-t="autoStart"></span></label>
+      <p class="muted small" data-t="autoStartHint"></p>
+      <p class="bad-t small" id="autoStartErr" hidden></p>
+    </section>
+
+    <section>
+      <h2 data-t="apps"></h2>
+      <table><thead><tr><th data-t="name"></th><th>Origin</th><th data-t="paired"></th><th data-t="lastUsed"></th><th></th></tr></thead><tbody id="tokens"></tbody></table>
+    </section>
+
+    <section>
+      <h2 data-t="jobs"></h2>
+      <table><thead><tr><th data-t="time"></th><th data-t="doc"></th><th>Printer</th><th>Bytes</th><th data-t="state"></th></tr></thead><tbody id="jobs"></tbody></table>
+      <p class="muted small" style="margin-top:10px" id="cfgPath"></p>
+    </section>
+  </div>
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const T = {
+  id: {
+    simple:'Simpel', advanced:'Lanjutan',
+    pairTitle:'Permintaan izin mencetak', pairBody:'{name} ({origin}) ingin mencetak lewat komputer ini. Pastikan kode sama dengan yang tampil di aplikasi.',
+    approve:'Izinkan', reject:'Tolak',
+    ready:'Siap mencetak', offline:'Printer tidak terhubung', noPrinterTitle:'Belum ada printer', agentDown:'Agent tidak merespons',
+    printerPaper:'Printer & kertas', printer:'Printer', noPrinter:'Tidak ada printer terpasang di Windows. Pasang driver printer terlebih dahulu.',
+    paper:'Ukuran kertas', pFull:'Continuous penuh', pHalf:'Continuous setengah', pCustom:'Ukuran lain', heightMM:'Tinggi kertas (mm)', apply:'Terapkan',
+    calTitle:'Cek posisi cetak', cal1:'Pasang kertas dengan tepi atas tepat di garis sobekan.', cal2:'Klik "Cetak halaman uji".',
+    cal3:'Kalau tulisan terlalu ke atas/bawah atau terpotong di kiri, geser dengan tombol di bawah, lalu cetak ulang.',
+    testPrint:'Cetak halaman uji', vertical:'Posisi atas–bawah', horizontal:'Posisi kiri–kanan',
+    lines:'{n} baris dari atas', cols:'{n} kolom dari kiri', reset:'Kembalikan ke bawaan',
+    lastJob:'Cetakan terakhir: {doc} · {state} · {time}', noJobs:'Belum ada cetakan.',
+    st_done:'selesai', st_queued:'antre', st_printing:'mencetak', st_error:'gagal',
+    advPage:'Detail halaman', topLines:'Margin atas (baris 1/6")', leftCols:'Margin kiri (kolom)', pitch:'Kerapatan huruf', quality:'Kualitas',
+    advPageHint:'Draft paling cepat dan paling jelas untuk kertas rangkap. 12 cpi = 96 karakter per baris.',
+    access:'Akses aplikasi web', origins:'Alamat aplikasi yang boleh mencetak (satu per baris)', match:'Pilih printer otomatis jika nama mengandung',
+    pairing:'Persetujuan pairing', pairAsk:'Tanya dulu (disarankan)', pairAuto:'Setujui otomatis',
+    startup:'Saat Windows menyala', autoStart:'Jalankan agent otomatis',
+    autoStartHint:'Kalau dimatikan, setelah restart aplikasi web tidak bisa mencetak dan halaman ini tidak bisa dibuka. Untuk menyalakan agent lagi, jalankan RawPrint Agent dari Services di Windows.',
+    confirmAutoOff:'Matikan jalan otomatis? Setelah restart, agent perlu dinyalakan manual dari Services di Windows.',
+    apps:'Aplikasi terhubung', name:'Nama', paired:'Terhubung', lastUsed:'Terakhir dipakai', revoke:'Cabut', none:'Belum ada',
+    jobs:'Riwayat cetak', time:'Waktu', doc:'Dokumen', state:'Status', save:'Simpan',
+    saved:'Tersimpan', sent:'Halaman uji dikirim ke {p}', approved:'Diizinkan', rejected:'Ditolak', revoked:'Akses dicabut',
+    confirmRevoke:'Cabut akses aplikasi ini? Aplikasi perlu pairing ulang.', confirmReset:'Kembalikan posisi & ukuran kertas ke bawaan?',
+    config:'File konfigurasi: {p}'
+  },
+  en: {
+    simple:'Simple', advanced:'Advanced',
+    pairTitle:'Print permission request', pairBody:'{name} ({origin}) wants to print through this computer. Make sure the code matches the one shown in the app.',
+    approve:'Allow', reject:'Reject',
+    ready:'Ready to print', offline:'Printer not connected', noPrinterTitle:'No printer yet', agentDown:'Agent is not responding',
+    printerPaper:'Printer & paper', printer:'Printer', noPrinter:'No printer is installed in Windows. Install the printer driver first.',
+    paper:'Paper size', pFull:'Full continuous', pHalf:'Half continuous', pCustom:'Other size', heightMM:'Paper height (mm)', apply:'Apply',
+    calTitle:'Check print position', cal1:'Load the paper with its top edge on the perforation.', cal2:'Click "Print test page".',
+    cal3:'If text is too high/low or cut off on the left, adjust with the buttons below and print again.',
+    testPrint:'Print test page', vertical:'Up–down position', horizontal:'Left–right position',
+    lines:'{n} lines from top', cols:'{n} columns from left', reset:'Restore defaults',
+    lastJob:'Last print: {doc} · {state} · {time}', noJobs:'Nothing printed yet.',
+    st_done:'done', st_queued:'queued', st_printing:'printing', st_error:'failed',
+    advPage:'Page details', topLines:'Top margin (1/6" lines)', leftCols:'Left margin (columns)', pitch:'Pitch', quality:'Quality',
+    advPageHint:'Draft is the fastest and clearest on multi-part paper. 12 cpi = 96 characters per line.',
+    access:'Web application access', origins:'Applications allowed to print (one per line)', match:'Pick printer automatically if its name contains',
+    pairing:'Pairing approval', pairAsk:'Ask first (recommended)', pairAuto:'Approve automatically',
+    startup:'When Windows starts', autoStart:'Start the agent automatically',
+    autoStartHint:'If turned off, web apps cannot print after a restart and this page will not open. To start the agent again, start RawPrint Agent from Services in Windows.',
+    confirmAutoOff:'Turn off automatic start? After a restart, the agent must be started by hand from Services in Windows.',
+    apps:'Paired applications', name:'Name', paired:'Paired', lastUsed:'Last used', revoke:'Revoke', none:'None',
+    jobs:'Print history', time:'Time', doc:'Document', state:'State', save:'Save',
+    saved:'Saved', sent:'Test page sent to {p}', approved:'Allowed', rejected:'Rejected', revoked:'Access revoked',
+    confirmRevoke:'Revoke access for this application? It will need to pair again.', confirmReset:'Restore print position and paper size to defaults?',
+    config:'Config file: {p}'
+  }
+};
+const PRESETS = [279.4, 139.7];
+const $ = (id) => document.getElementById(id);
+let lang = localStorage.getItem('rp.lang') || ((navigator.language || '').toLowerCase().startsWith('id') ? 'id' : 'en');
+let mode = localStorage.getItem('rp.mode') || 'simple';
+let state = null, advDirty = false, busy = false, showCustom = false;
+
+const t = (k, v) => (T[lang][k] || k).replace(/\{(\w+)\}/g, (_, n) => v && v[n] != null ? v[n] : '');
+const esc = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+
+function toast(msg, bad) {
+  const el = $('toast'); el.textContent = msg; el.style.background = bad ? 'var(--bad)' : 'var(--fg)';
+  el.style.display = 'block'; clearTimeout(el._h); el._h = setTimeout(() => el.style.display = 'none', 3500);
+}
+async function call(method, path, body) {
+  const r = await fetch(path, { method, cache:'no-store', headers: body ? { 'Content-Type':'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 204) return null;
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((j.error && j.error.message) || r.statusText);
+  return j;
+}
+
+function applyChrome() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-t]').forEach(el => el.textContent = t(el.dataset.t));
+  document.querySelectorAll('[data-lang]').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === lang));
+  document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === mode));
+  $('advanced').hidden = mode !== 'advanced';
+  if (state) render(state);
+}
+
+function selectedPrinter() { return $('printer').value || (state && state.resolved_printer) || ''; }
+
+function render(s) {
+  state = s;
+  $('ver').textContent = 'v' + s.version;
+
+  const p = s.printers.find(x => x.name === s.resolved_printer);
+  const dot = $('dot');
+  if (!s.resolved_printer) { dot.className = 'dot bad'; $('statusText').textContent = t('noPrinterTitle'); $('statusSub').textContent = s.resolve_error || ''; }
+  else if (!p || p.offline) { dot.className = 'dot warn'; $('statusText').textContent = t('offline'); $('statusSub').textContent = s.resolved_printer + (p ? ' · ' + p.status : ''); }
+  else { dot.className = 'dot ok'; $('statusText').textContent = t('ready'); $('statusSub').textContent = s.resolved_printer + (p.status !== 'ready' ? ' · ' + p.status : ''); }
+
+  $('pairCard').hidden = s.pending_pairings.length === 0;
+  $('pairList').innerHTML = s.pending_pairings.map(x => `<p>${esc(t('pairBody', { name: x.name, origin: x.origin }))}</p>
+    <div class="code">${esc(x.code)}</div>
+    <div class="row" style="margin-bottom:8px"><button class="primary big" data-approve="${esc(x.id)}">${esc(t('approve'))}</button>
+    <button class="danger" data-reject="${esc(x.id)}">${esc(t('reject'))}</button></div>`).join('');
+
+  const sel = $('printer');
+  if (document.activeElement !== sel) {
+    sel.innerHTML = s.printers.map(x => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('');
+    sel.value = s.resolved_printer || '';
+  }
+  $('noPrinter').hidden = s.printers.length > 0;
+
+  const prof = s.profile;
+  const isPreset = PRESETS.some(v => Math.abs(v - prof.page_height_mm) < 0.05);
+  document.querySelectorAll('[data-preset]').forEach(b => {
+    const v = b.dataset.preset;
+    b.setAttribute('aria-pressed', v === 'custom' ? String(!isPreset || showCustom) : String(isPreset && !showCustom && Math.abs(+v - prof.page_height_mm) < 0.05));
+  });
+  $('customLabel').textContent = isPreset ? '' : prof.page_height_mm + ' mm';
+  $('customBox').hidden = !(showCustom || !isPreset);
+  if (document.activeElement !== $('customMM')) $('customMM').value = prof.page_height_mm;
+
+  $('topVal').textContent = t('lines', { n: prof.top_margin_lines });
+  $('leftVal').textContent = t('cols', { n: prof.left_margin_cols });
+  const last = s.recent_jobs[0];
+  $('lastJob').textContent = last ? t('lastJob', { doc: last.doc_name, state: t('st_' + last.state) + (last.detail ? ' (' + last.detail + ')' : ''),
+    time: new Date(last.created_at).toLocaleTimeString() }) : t('noJobs');
+
+  if (!advDirty) {
+    $('height').value = prof.page_height_mm; $('top').value = prof.top_margin_lines; $('left').value = prof.left_margin_cols;
+    $('cpi').value = String(prof.cpi); $('quality').value = prof.quality;
+    $('origins').value = s.allowed_origins.join('\n'); $('match').value = s.default_printer_match || '';
+    $('autoApprove').value = String(s.auto_approve_pairing);
+  }
+  $('startupCard').hidden = s.auto_start === undefined && !s.auto_start_error;
+  $('autoStart').checked = !!s.auto_start;
+  $('autoStart').disabled = s.auto_start === undefined;
+  $('autoStartErr').hidden = !s.auto_start_error;
+  $('autoStartErr').textContent = s.auto_start_error || '';
+  $('tokens').innerHTML = s.tokens.length ? s.tokens.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.origin)}</td><td>${esc(x.created_at)}</td>
+    <td>${esc(x.last_used_at || '-')}</td><td><button class="danger" data-revoke="${esc(x.id)}">${esc(t('revoke'))}</button></td></tr>`).join('')
+    : `<tr><td colspan="5" class="muted">${esc(t('none'))}</td></tr>`;
+  $('jobs').innerHTML = s.recent_jobs.length ? s.recent_jobs.map(j => `<tr><td>${esc(new Date(j.created_at).toLocaleString())}</td><td>${esc(j.doc_name)}</td>
+    <td>${esc(j.printer)}</td><td>${j.bytes}</td><td class="${j.state === 'error' ? 'bad-t' : j.state === 'done' ? 'ok-t' : ''}">${esc(t('st_' + j.state))}${j.detail ? ' · ' + esc(j.detail) : ''}</td></tr>`).join('')
+    : `<tr><td colspan="5" class="muted">${esc(t('noJobs'))}</td></tr>`;
+  $('cfgPath').textContent = t('config', { p: s.config_path });
+}
+
+async function refresh() {
+  try { render(await call('GET', '/admin/state')); }
+  catch (e) { $('dot').className = 'dot bad'; $('statusText').textContent = t('agentDown'); $('statusSub').textContent = e.message; }
+}
+
+function settingsBody(over) {
+  return Object.assign({ allowed_origins: state.allowed_origins, auto_approve_pairing: state.auto_approve_pairing,
+    default_printer: state.default_printer, default_printer_match: state.default_printer_match }, over);
+}
+async function saveProfile(patch) {
+  const profile = Object.assign({}, state.profile, patch);
+  await call('PUT', '/admin/profile', { printer: selectedPrinter(), profile });
+}
+async function run(fn, okMsg) {
+  if (busy) return; busy = true;
+  try { const msg = await fn(); toast(typeof msg === 'string' && msg ? msg : (okMsg || t('saved'))); await refresh(); }
+  catch (e) { toast(e.message, true); }
+  finally { busy = false; }
+}
+
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest('button'); if (!b) return;
+  if (b.dataset.lang) { lang = b.dataset.lang; localStorage.setItem('rp.lang', lang); return applyChrome(); }
+  if (b.dataset.mode) { mode = b.dataset.mode; localStorage.setItem('rp.mode', mode); return applyChrome(); }
+  if (!state) return;
+  if (b.dataset.approve) return run(() => call('POST', `/admin/pair/${b.dataset.approve}/approve`), t('approved'));
+  if (b.dataset.reject) return run(() => call('POST', `/admin/pair/${b.dataset.reject}/reject`), t('rejected'));
+  if (b.dataset.revoke) { if (confirm(t('confirmRevoke'))) run(() => call('DELETE', `/admin/tokens/${b.dataset.revoke}`), t('revoked')); return; }
+  if (b.dataset.preset) {
+    if (b.dataset.preset === 'custom') { showCustom = true; render(state); $('customMM').focus(); return; }
+    showCustom = false;
+    return run(() => saveProfile({ page_height_mm: +b.dataset.preset }));
+  }
+  if (b.dataset.nudge) {
+    const [k, d] = b.dataset.nudge.split(':');
+    const key = k === 'top' ? 'top_margin_lines' : 'left_margin_cols';
+    const max = k === 'top' ? 20 : 40;
+    const v = Math.min(max, Math.max(0, state.profile[key] + +d));
+    if (v === state.profile[key]) return;
+    return run(() => saveProfile({ [key]: v }));
+  }
+  switch (b.id) {
+    case 'customSave': return run(() => saveProfile({ page_height_mm: +$('customMM').value }));
+    case 'testPrint': return run(async () => { const r = await call('POST', '/admin/test-print', { printer: selectedPrinter() }); return t('sent', { p: r.job.printer }); });
+    case 'resetProfile': if (confirm(t('confirmReset'))) { showCustom = false; run(() => saveProfile(state.default_profile)); } return;
+    case 'saveProfile': return run(async () => {
+      await saveProfile({ page_height_mm: +$('height').value, top_margin_lines: +$('top').value, left_margin_cols: +$('left').value, cpi: +$('cpi').value, quality: $('quality').value });
+      advDirty = false;
+    });
+    case 'saveSettings': return run(async () => {
+      await call('PUT', '/admin/settings', settingsBody({ allowed_origins: $('origins').value.split('\n'), auto_approve_pairing: $('autoApprove').value === 'true', default_printer_match: $('match').value }));
+      advDirty = false;
+    });
+  }
+});
+
+$('printer').addEventListener('change', () => run(() => call('PUT', '/admin/settings', settingsBody({ default_printer: $('printer').value }))));
+$('autoStart').addEventListener('change', (ev) => {
+  const on = ev.target.checked;
+  if (!on && !confirm(t('confirmAutoOff'))) { ev.target.checked = true; return; }
+  run(() => call('PUT', '/admin/auto-start', { enabled: on }));
+});
+document.querySelectorAll('#advanced input:not(#autoStart), #advanced select, #advanced textarea').forEach(el => el.addEventListener('input', () => advDirty = true));
+
+applyChrome();
+refresh();
+setInterval(() => { if (!busy) refresh(); }, 2000);
+</script>
+</body>
+</html>

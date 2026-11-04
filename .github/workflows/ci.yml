@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          check-latest: true
+      - run: make test
+
+  # Builds the real installer on Windows so a broken Inno Setup script fails before a release.
+  installer:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          check-latest: true
+      - name: Build binaries
+        shell: bash
+        run: |
+          LDFLAGS="-s -w -X main.version=0.0.0-ci.${GITHUB_RUN_NUMBER}"
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o dist/rawprint-agent-amd64.exe ./cmd/rawprint-agent
+          GOOS=windows GOARCH=386   go build -trimpath -ldflags "$LDFLAGS" -o dist/rawprint-agent-386.exe ./cmd/rawprint-agent
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          .\dist\rawprint-agent-amd64.exe version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Build installer
+        shell: pwsh
+        run: .\scripts\build-installer.ps1 -Version "0.0.0-ci.$env:GITHUB_RUN_NUMBER"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-ci
+          path: dist/RawPrintAgent-Setup-*.exe
+          retention-days: 7
